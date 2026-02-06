@@ -34,3 +34,14 @@ def fetch_data():
 
 if __name__ == "__main__":
     fetch_data()
+    
+def fetch_data():
+    try:
+        start = datetime.datetime(2015, 1, 1)
+        end = datetime.date.today()
+        df = web.DataReader(list(INDICATORS.keys()), 'fred', start, end)
+        df = df.ffill()
+        df.to_csv('canary_data.csv')
+        print("✅ 12指標のデータを正常に更新しました (canary_data.csv)")
+    except Exception as e:
+        print(f"❌ データ取得中にエラーが発生しました: {e}")
