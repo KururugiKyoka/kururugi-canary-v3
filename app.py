@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
 import plotly.express as px
+import plotly.graph_objects as go # 追加
 import datetime
 
 # ページ設定
@@ -12,13 +13,11 @@ def load_and_process_data_with_history():
     df_full = pd.read_csv('canary_data.csv', index_col=0, parse_dates=True)
     latest_date = df_full.index[-1]
     target_past_date = latest_date - datetime.timedelta(days=30)
-    
     try:
         nearest_idx = df_full.index.get_indexer([target_past_date], method='nearest')[0]
         past_date = df_full.index[nearest_idx]
     except:
         past_date = latest_date
-
     latest_row = df_full.loc[latest_date]
     past_row = df_full.loc[past_date]
     return df_full, latest_row, past_row, latest_date, past_date
@@ -33,15 +32,13 @@ def calculate_scores_at_point(df_history, data_row):
         score = ((val_at_point - s_hist.min()) / (s_hist.max() - s_hist.min())) * 100
         return (100 - score) if inv else score
 
-    # 直感的な項目名
-    scores = {
+    return {
         '金融・市場の歪み': (get_score('BAMLH0A0HYM2', False) + get_score('T10Y2Y', True)) / 2,
         '物流・実需の減退': get_score('HTRUCKSSAAR', True),
         '住宅・先行指標の冷え込み': (get_score('HOUST', True) + get_score('PERMIT', True)) / 2,
         '労働市場の脆弱化': (get_score('ICSA', False) + get_score('TEMPHELPS', True)) / 2,
-        '投資・AIの過熱感': 75 # 固定値
+        '投資・AIの過熱感': 75 
     }
-    return scores
 
 # ========= メイン処理 =========
 try:
@@ -61,26 +58,39 @@ try:
         st.plotly_chart(fig_m, use_container_width=True, theme=None)
 
     with col2:
-        st.subheader("🕸️ リスク・モメンタム (現在 vs 1ヶ月前)")
+        st.subheader("🕸️ リスク・モメンタム診断")
         
-        radar_data = []
-        items = ['金融・市場の歪み', '物流・実需の減退', '住宅・先行指標の冷え込み', '労働市場の脆弱化', '投資・AIの過熱感']
-        
-        for item in items:
-            radar_data.append({'項目': item, 'リスク': current_scores[item], '時期': '現在', '透明度': 0.8})
-        for item in items:
-            radar_data.append({'項目': item, 'リスク': past_scores[item], '時期': '1ヶ月前', '透明度': 0.15})
-            
-        radar_df = pd.DataFrame(radar_data)
+        items = list(current_scores.keys())
+        # グラフを閉じるためにリストの最初に最後を追加
+        items_close = items + [items[0]]
+        current_vals = [current_scores[i] for i in items] + [current_scores[items[0]]]
+        past_vals = [past_scores[i] for i in items] + [past_scores[items[0]]]
 
-        # 【修正点】色を深みのあるクリムゾンレッド(#DC143C)に変更
-        fig_r = px.line_polar(radar_df, r='リスク', theta='項目', color='時期', line_close=True,
-                              color_discrete_map={'現在': '#DC143C', '1ヶ月前': '#00CED1'})
-        
-        # 【修正点】透明度を時期によって変えるための少し高度な設定
-        # 過去は薄く(0.15)、現在は濃く(0.8)
-        fig_r.for_each_trace(lambda t: t.update(fill='toself', opacity=0.8 if t.name == '現在' else 0.15, line=dict(width=5)))
-        
+        fig_r = go.Figure()
+
+        # 1. 青い中心核（安全圏 0-25%）
+        fig_r.add_trace(go.Scatterpolar(
+            r=[25]*6, theta=items_close, fill='toself',
+            fillcolor='rgba(0, 255, 255, 0.3)', # 淡い水色
+            line=dict(color='rgba(0, 255, 255, 0.5)', width=1),
+            name='安全圏', hoverinfo='skip'
+        ))
+
+        # 2. 1ヶ月前（水色の点線）
+        fig_r.add_trace(go.Scatterpolar(
+            r=past_vals, theta=items_close,
+            line=dict(color='#00FFFF', width=2, dash='dot'),
+            name='1ヶ月前'
+        ))
+
+        # 3. 現在（力強い真紅）
+        fig_r.add_trace(go.Scatterpolar(
+            r=current_vals, theta=items_close, fill='toself',
+            fillcolor='rgba(255, 0, 0, 0.6)', # 濃い赤（透明度を上げて重なりを見せる）
+            line=dict(color='#FF0000', width=5),
+            name='現在'
+        ))
+
         fig_r.update_layout(
             template='plotly_dark',
             polar=dict(
@@ -88,11 +98,11 @@ try:
                 angularaxis=dict(gridcolor='#444', tickfont=dict(size=12, color='white'))
             ),
             legend=dict(orientation="h", yanchor="bottom", y=1.05, xanchor="right", x=1),
-            margin=dict(l=50, r=50, t=30, b=30)
+            margin=dict(l=60, r=60, t=30, b=30)
         )
         st.plotly_chart(fig_r, use_container_width=True, theme=None)
 
-    # 下段タブ（変更なし）
+    # 下段タブ
     st.divider()
     tabs = st.tabs(["🏠 住宅・物流", "👥 労働・景況", "💸 金融・流動性"])
     sections = [
