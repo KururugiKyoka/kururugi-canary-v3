@@ -67,7 +67,7 @@ try:
             margin=dict(l=0, r=0, t=30, b=0),
             height=400
         )
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, width="stretch")
 
     with col_right:
         st.subheader("🕸️ Risk Radar")
@@ -81,7 +81,7 @@ try:
             paper_bgcolor='rgba(0,0,0,0)',
             plot_bgcolor='rgba(0,0,0,0)',
         )
-        st.plotly_chart(fig_radar, use_container_width=True)
+        st.plotly_chart(fig_radar, width="stretch")
 
     # --- Section 3: 分析ノート（下段） ---
     with st.expander("📝 KURURUGI's Analysis Note", expanded=True):
