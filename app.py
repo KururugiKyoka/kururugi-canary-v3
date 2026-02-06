@@ -87,7 +87,7 @@ if df is not None:
             st.subheader("🕸️ 景気後退リスク")
             items = list(current_scores.keys()); items_c = items + [items[0]]
             fig_r = go.Figure()
-            fig_r.add_trace(go.Scatterpolar(r=[25]*6, theta=items_c, fill='toself', fillcolor='rgba(0, 255, 255, 0.1)', line=dict(color='rgba(0, 255, 255, 0.2)', width=1), name='安全圏'))
+            fig_r.add_trace(go.Scatterpolar(r=[25]*6, theta=items_c, fill='toself', fillcolor='rgba(0, 255, 255, 0.1)', line=dict(color='rgba(0, 255, 255, 0.2)', width=3), name='安全圏'))
             fig_r.add_trace(go.Scatterpolar(r=[past_scores[i] for i in items]+[past_scores[items[0]]], theta=items_c, mode='lines+markers', line=dict(color='#00FFFF', width=2, dash='dot'), name=selected_period))
             fig_r.add_trace(go.Scatterpolar(r=[current_scores[i] for i in items]+[current_scores[items[0]]], theta=items_c, fill='toself', fillcolor='rgba(220, 20, 60, 0.8)', line=dict(color='#FF0000', width=5), name='現在'))
             fig_r.update_layout(template='plotly_dark', polar=dict(radialaxis=dict(visible=True, range=[0, 100])), legend=dict(orientation="h", y=1.2), height=400, margin=dict(l=40, r=40, t=40, b=40))
