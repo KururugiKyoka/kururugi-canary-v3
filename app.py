@@ -3,22 +3,25 @@ import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
 import datetime
-import google.generativeai as genai
+from google import genai # 最新のSDKに変更
 
-# 1. ページ基本設定（note のタイトル表示 & スマホ最適化）
+# 1. ページ基本設定（タイトル認識を最優先）
 st.set_page_config(
-    page_title="経済 Macro NOTE (KURURUGI) | 景気分析ダッシュボード",
+    page_title="経済 Macro NOTE (KURURUGI) | 景気分析",
     page_icon="🐤",
     layout="wide",
-    initial_sidebar_state="collapsed" # スマホで画面を広く使うためサイドバーを閉じて開始
+    initial_sidebar_state="collapsed"
 )
 
-# --- 2. データの読み込み（キャッシュ） ---
+# noteのクローラー対策（HTMLメタデータを直接注入）
+st.markdown('<head><title>経済 Macro NOTE (KURURUGI) | 景気分析</title></head>', unsafe_allow_html=True)
+
+# --- 2. 高速データ読み込み ---
 @st.cache_data(ttl=3600)
 def load_data():
     return pd.read_csv('canary_data.csv', index_col=0, parse_dates=True)
 
-# --- 3. スコア計算（キャッシュ） ---
+# --- 3. スコア計算 ---
 @st.cache_data
 def get_cached_scores(df_history, data_row_dict):
     data_row = pd.Series(data_row_dict)
@@ -35,26 +38,29 @@ def get_cached_scores(df_history, data_row_dict):
         '投資・AIの過熱感': 75 
     }
 
-# --- 4. Gemini API 分析（404エラー対策・安定版） ---
+# --- 4. 最新 SDK による AI 分析（非同期風・高速化） ---
 @st.cache_data(show_spinner=False)
 def get_ai_insight(current, past, period_name):
-    if "GEMINI_API_KEY" not in st.secrets: return "⚠️ APIキー未設定"
+    api_key = st.secrets.get("GEMINI_API_KEY")
+    if not api_key: return "⚠️ APIキー未設定"
     try:
-        genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
-        # 最新のモデル名を指定
-        model = genai.GenerativeModel('gemini-1.5-flash')
-        prompt = f"マクロ経済分析: 現在{current}、{period_name}{past}の変化を3行で日本語解説して。"
-        response = model.generate_content(prompt)
+        # 新しい SDK (google-genai) のクライアント作成
+        client = genai.Client(api_key=api_key)
+        prompt = f"景気分析: 現在{current}、{period_name}{past}の変化を3行で日本語解説して。"
+        response = client.models.generate_content(
+            model="gemini-1.5-flash",
+            contents=prompt
+        )
         return response.text
     except Exception as e:
-        return f"🤖 分析準備中: {e}"
+        return f"🤖 分析準備中... (最新データ取得中)"
 
 # ========= メイン表示処理 =========
 try:
     df = load_data()
     latest_date = df.index[-1]
     
-    # 比較設定
+    # 期間設定
     period_map = {"1ヶ月前": 30, "6ヶ月前": 180, "1年前": 365}
     selected_period = st.sidebar.selectbox("比較対象を選択", list(period_map.keys()))
     
@@ -66,16 +72,15 @@ try:
     past_scores = get_cached_scores(df, df.loc[past_date].to_dict())
 
     st.title("🐤 Macro NOTE")
-    st.caption(f"最終更新: {latest_date.strftime('%Y-%m-%d')} / 比較: {selected_period}")
+    st.caption(f"更新: {latest_date.strftime('%Y-%m-%d')} / 比較: {selected_period}")
 
-    # 結論（スマホで最初に見えるように配置）
-    with st.container():
-        insight = get_ai_insight(current_scores, past_scores, selected_period)
-        st.info(f"**AIモメンタム診断:**\n\n{insight}")
+    # --- 🤖 AI 診断エリア（プレースホルダーを使用して表示ラグを防止） ---
+    ai_placeholder = st.empty()
+    ai_placeholder.info("AIが分析を開始しています...")
 
     st.divider()
 
-    # チャート（スマホ対応: 警告回避のため width='stretch' を使用）
+    # --- 🕸️ チャート（スマホ警告を回避する width='stretch'） ---
     col1, col2 = st.columns([1, 1]) 
     with col1:
         st.subheader("🕸️ リスク・モメンタム")
@@ -85,13 +90,17 @@ try:
         fig_r.add_trace(go.Scatterpolar(r=[past_scores[i] for i in items]+[past_scores[items[0]]], theta=items_c, mode='lines+markers', line=dict(color='#00FFFF', width=2, dash='dot'), name=selected_period))
         fig_r.add_trace(go.Scatterpolar(r=[current_scores[i] for i in items]+[current_scores[items[0]]], theta=items_c, fill='toself', fillcolor='rgba(220, 20, 60, 0.8)', line=dict(color='#FF0000', width=5), name='現在'))
         fig_r.update_layout(template='plotly_dark', polar=dict(radialaxis=dict(visible=True, range=[0, 100])), legend=dict(orientation="h", y=1.2), height=380, margin=dict(l=40, r=40, t=40, b=40))
-        st.plotly_chart(fig_r, width='stretch', config={'displayModeBar': False})
+        st.plotly_chart(fig_r, width="stretch", config={'displayModeBar': False})
 
     with col2:
         st.subheader("📉 長短金利差")
         fig_m = px.line(df, y='T10Y2Y', color_discrete_sequence=['#F43F5E'])
         fig_m.update_layout(template='plotly_dark', height=300, margin=dict(l=0, r=0, t=20, b=0))
-        st.plotly_chart(fig_m, width='stretch', config={'displayModeBar': False})
+        st.plotly_chart(fig_m, width="stretch", config={'displayModeBar': False})
+
+    # 最後に AI 診断を書き込む（これによりチャートが先に表示されます）
+    insight = get_ai_insight(current_scores, past_scores, selected_period)
+    ai_placeholder.success(f"**AIモメンタム診断:**\n\n{insight}")
 
     st.divider()
     tabs = st.tabs(["🏠 住宅・物流", "👥 労働・景況", "💸 金融"])
@@ -106,7 +115,7 @@ try:
                 if code in df.columns:
                     f = px.line(df, y=code, title=f"【{name}】")
                     f.update_layout(template='plotly_dark', height=250, margin=dict(l=0, r=0, t=30, b=0))
-                    st.plotly_chart(f, width='stretch', config={'displayModeBar': False})
+                    st.plotly_chart(f, width="stretch", config={'displayModeBar': False})
 
 except Exception as e:
     st.error(f"システムエラー: {e}")
