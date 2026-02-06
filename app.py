@@ -20,6 +20,8 @@ st.markdown('<head><title>経済 Macro NOTE (KURURUGI)</title></head>', unsafe_a
 def load_data():
     try:
         df = pd.read_csv('canary_data.csv', index_col=0, parse_dates=True)
+        # 列名の微修正（スペースなどが混入している場合への対策）
+        df.columns = df.columns.str.strip()
         return df
     except:
         return None
@@ -29,10 +31,12 @@ def load_data():
 def get_cached_scores(df_history, data_row_dict):
     data_row = pd.Series(data_row_dict)
     def get_score(code, inv=False):
+        if code not in df_history.columns: return 50
         s_hist = df_history[code].dropna()
         if s_hist.empty or code not in data_row or pd.isna(data_row[code]): return 50
         score = ((data_row[code] - s_hist.min()) / (s_hist.max() - s_hist.min())) * 100
         return (100 - score) if inv else score
+    
     return {
         '金融リスク': (get_score('BAMLH0A0HYM2', False) + get_score('T10Y2Y', True)) / 2,
         '物流・実需': get_score('HTRUCKSSAAR', True),
@@ -43,6 +47,18 @@ def get_cached_scores(df_history, data_row_dict):
 
 # ========= メイン表示処理 =========
 df = load_data()
+
+# 指標設定（名称, 単位, 倍率）
+conf = {
+    "HTRUCKSSAAR": ["大型トラック販売台数", "万台", 100],
+    "HOUST": ["住宅着工件数", "万戸", 0.1],
+    "T10Y2Y": ["景気の体温計（長短金利差）", "%", 1],
+    "ICSA": ["失業保険申請数", "万人", 0.0001],
+    "WALCL": ["FRB総資産", "兆ドル", 0.000001],
+    "BAMLH0A0HYM2": ["企業の資金繰りリスク", "%", 1],
+    "PERMIT": ["住宅建設許可数", "万戸", 0.1],
+    "TEMPHELPS": ["派遣・一時雇用者数", "万人", 0.1]
+}
 
 if df is not None:
     try:
@@ -60,65 +76,57 @@ if df is not None:
         past_scores = get_cached_scores(df, df.loc[past_date].to_dict())
 
         st.title("🐤 Macro NOTE (KURURUGI)")
-        st.caption(f"最終更新: {latest_date.strftime('%Y-%m-%d')} / 比較: {selected_period}")
+        st.caption(f"最終更新: {latest_date.strftime('%Y-%m-%d')} / 比較対象: {selected_period}")
 
         st.divider()
 
-        # --- メインチャート ---
-        st.subheader("🕸️ 景気後退リスク・モメンタム")
-        items = list(current_scores.keys()); items_c = items + [items[0]]
-        fig_r = go.Figure()
-        fig_r.add_trace(go.Scatterpolar(r=[25]*6, theta=items_c, fill='toself', fillcolor='rgba(0, 255, 255, 0.1)', line=dict(color='rgba(0, 255, 255, 0.2)', width=1), name='安全圏'))
-        fig_r.add_trace(go.Scatterpolar(r=[past_scores[i] for i in items]+[past_scores[items[0]]], theta=items_c, mode='lines+markers', line=dict(color='#00FFFF', width=2, dash='dot'), name=selected_period))
-        fig_r.add_trace(go.Scatterpolar(r=[current_scores[i] for i in items]+[current_scores[items[0]]], theta=items_c, fill='toself', fillcolor='rgba(220, 20, 60, 0.8)', line=dict(color='#FF0000', width=5), name='現在'))
-        fig_r.update_layout(template='plotly_dark', polar=dict(radialaxis=dict(visible=True, range=[0, 100])), legend=dict(orientation="h", y=1.2), height=450)
-        st.plotly_chart(fig_r, use_container_width=True, config={'displayModeBar': False})
-
-        st.divider()
-
-        # --- 個別指標の推移（単位を調整） ---
-        st.subheader("📉 各セクターの動き")
-        tabs = st.tabs(["🏠 住宅・物流", "👥 労働・景況", "💸 金融・供給量"])
+        # --- メインエリア：レーダーと金利差を横並びに復活 ---
+        col1, col2 = st.columns([1, 1])
         
-        # 指標設定（コード: [名称, 単位, 倍率]）
-        conf = {
-            "HTRUCKSSAAR": ["大型トラック販売台数", "万台", 100],
-            "HOUST": ["住宅着工件数", "万戸", 0.1],
-            "T10Y2Y": ["長短金利差", "%", 1],
-            "ICSA": ["失業保険申請数", "万人", 0.0001],
-            "WALCL": ["FRB総資産", "兆ドル", 0.000001],
-            "BAMLH0A0HYM2": ["社債リスク(HYスプレッド)", "%", 1]
-        }
+        with col1:
+            st.subheader("🕸️ 景気後退リスク")
+            items = list(current_scores.keys()); items_c = items + [items[0]]
+            fig_r = go.Figure()
+            fig_r.add_trace(go.Scatterpolar(r=[25]*6, theta=items_c, fill='toself', fillcolor='rgba(0, 255, 255, 0.1)', line=dict(color='rgba(0, 255, 255, 0.2)', width=1), name='安全圏'))
+            fig_r.add_trace(go.Scatterpolar(r=[past_scores[i] for i in items]+[past_scores[items[0]]], theta=items_c, mode='lines+markers', line=dict(color='#00FFFF', width=2, dash='dot'), name=selected_period))
+            fig_r.add_trace(go.Scatterpolar(r=[current_scores[i] for i in items]+[current_scores[items[0]]], theta=items_c, fill='toself', fillcolor='rgba(220, 20, 60, 0.8)', line=dict(color='#FF0000', width=5), name='現在'))
+            fig_r.update_layout(template='plotly_dark', polar=dict(radialaxis=dict(visible=True, range=[0, 100])), legend=dict(orientation="h", y=1.2), height=400, margin=dict(l=40, r=40, t=40, b=40))
+            st.plotly_chart(fig_r, use_container_width=True, config={'displayModeBar': False})
 
-        with tabs[0]:
-            c1, c2 = st.columns(2)
-            for i, code in enumerate(["HTRUCKSSAAR", "HOUST"]):
-                if code in df.columns:
-                    display_df = df[[code]].copy()
-                    display_df[code] = display_df[code] * conf[code][2] # 単位変換
-                    f = px.line(display_df, y=code, title=f"【{conf[code][0]}】 (単位: {conf[code][1]})")
-                    f.update_layout(template='plotly_dark', height=300, xaxis_title=None, yaxis_title=None)
-                    (c1 if i==0 else c2).plotly_chart(f, use_container_width=True)
+        with col2:
+            code = "T10Y2Y"
+            if code in df.columns:
+                st.subheader(f"📉 {conf[code][0]}")
+                display_df = df[[code]].copy()
+                display_df[code] = display_df[code] * conf[code][2]
+                fig_m = px.line(display_df, y=code, color_discrete_sequence=['#F43F5E'])
+                fig_m.update_layout(template='plotly_dark', height=350, margin=dict(l=0, r=0, t=20, b=0), xaxis_title=None, yaxis_title=None)
+                st.plotly_chart(fig_m, use_container_width=True, config={'displayModeBar': False})
+            else:
+                st.warning(f"【{code}】のデータがCSVに見当たりません。GitHub Actionsの取得状況を確認してください。")
 
-        with tabs[1]:
-            c1, c2 = st.columns(2)
-            for i, code in enumerate(["ICSA", "T10Y2Y"]):
-                if code in df.columns:
-                    display_df = df[[code]].copy()
-                    display_df[code] = display_df[code] * conf[code][2]
-                    f = px.line(display_df, y=code, title=f"【{conf[code][0]}】 (単位: {conf[code][1]})")
-                    f.update_layout(template='plotly_dark', height=300)
-                    (c1 if i==0 else c2).plotly_chart(f, use_container_width=True)
+        st.divider()
 
-        with tabs[2]:
-            c1, c2 = st.columns(2)
-            for i, code in enumerate(["WALCL", "BAMLH0A0HYM2"]):
-                if code in df.columns:
-                    display_df = df[[code]].copy()
-                    display_df[code] = display_df[code] * conf[code][2]
-                    f = px.line(display_df, y=code, title=f"【{conf[code][0]}】 (単位: {conf[code][1]})")
-                    f.update_layout(template='plotly_dark', height=300)
-                    (c1 if i==0 else c2).plotly_chart(f, use_container_width=True)
+        # --- 詳細タブ ---
+        tabs = st.tabs(["🏠 住宅・物流", "👥 労働・景況", "💸 金融・供給量"])
+        sections = [
+            ["HTRUCKSSAAR", "HOUST"],
+            ["ICSA", "TEMPHELPS"],
+            ["WALCL", "BAMLH0A0HYM2"]
+        ]
+        
+        for i, codes in enumerate(sections):
+            with tabs[i]:
+                c1, c2 = st.columns(2)
+                for j, code in enumerate(codes):
+                    if code in df.columns:
+                        display_df = df[[code]].copy()
+                        display_df[code] = display_df[code] * conf[code][2]
+                        f = px.line(display_df, y=code, title=f"【{conf[code][0]}】 ({conf[code][1]})")
+                        f.update_layout(template='plotly_dark', height=280, margin=dict(t=50))
+                        (c1 if j==0 else c2).plotly_chart(f, use_container_width=True)
 
     except Exception as e:
-        st.error(f"エラー: {e}")
+        st.error(f"表示エラー: {e}")
+else:
+    st.error("canary_data.csv が見つからないか、読み込めません。")
