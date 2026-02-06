@@ -8,7 +8,7 @@ import google.generativeai as genai
 # 1. ページ基本設定
 st.set_page_config(page_title="Macro NOTE (KURURUGI)", layout="wide")
 
-# --- 2. データの読み込み ---
+# --- 2. データの読み込み（キャッシュ利用） ---
 @st.cache_data(ttl=3600)
 def load_data():
     return pd.read_csv('canary_data.csv', index_col=0, parse_dates=True)
@@ -40,26 +40,32 @@ def calculate_scores(df_history, data_row):
         '投資・AIの過熱感': 75 
     }
 
-# --- 5. Gemini API による分析関数（404エラー対策・強化版） ---
+# --- 5. Gemini API による分析関数（404完全対策版） ---
 def get_ai_insight(current, past, period_name):
     if "GEMINI_API_KEY" not in st.secrets:
         return "⚠️ Secrets に GEMINI_API_KEY が設定されていません。"
     
     try:
         genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
-        # モデル名をより汎用的なものに変更
+        # モデル名を最も標準的な 'gemini-1.5-flash' に固定
         model = genai.GenerativeModel('gemini-1.5-flash')
         
         prompt = f"""
         あなたはプロのマクロ経済アナリストです。
-        現在と{period_name}のリスク変化を3行で鋭く解説してください。
+        現在のリスク指標を、{period_name}と比較した以下のデータから、
+        注目のポイントを3行で鋭く日本語で解説してください。
         【現在のリスク】{current}
         【{period_name}のリスク】{past}
         """
         response = model.generate_content(prompt)
         return response.text
     except Exception as e:
-        return f"🤖 AI分析は現在準備中です。データの蓄積をお待ちください。\n(詳細: {e})"
+        # 1.5-flash が 404 になる場合の最終手段として gemini-pro を試す
+        try:
+            model = genai.GenerativeModel('gemini-pro')
+            return model.generate_content(prompt).text
+        except:
+            return f"🤖 分析を生成できませんでした。APIの設定を再確認してください。(Error: {e})"
 
 # ========= メイン処理 =========
 try:
@@ -84,7 +90,7 @@ try:
         st.info(insight)
     st.divider()
 
-    # グラフ表示（省略せずすべて含めています）
+    # グラフ表示
     col1, col2 = st.columns([1, 2])
     with col1:
         st.subheader("🕸️ リスク・モメンタム")
@@ -96,7 +102,7 @@ try:
         fig_r.add_trace(go.Scatterpolar(r=[25]*6, theta=items_close, fill='toself', 
             fillcolor='rgba(0, 255, 255, 0.1)', line=dict(color='rgba(0, 255, 255, 0.2)', width=1), name='安全圏'))
         fig_r.add_trace(go.Scatterpolar(r=past_vals, theta=items_close, mode='lines+markers',
-            line=dict(color='#00FFFF', width=2, dash='dot'), marker=dict(size=6), name=selected_period))
+            line=dict(color='#00FFFF', width=2, dash='dot'), marker=dict(size=6, symbol='circle-open'), name=selected_period))
         fig_r.add_trace(go.Scatterpolar(r=current_vals, theta=items_close, fill='toself',
             fillcolor='rgba(220, 20, 60, 0.8)', line=dict(color='#FF0000', width=5), name='現在'))
         fig_r.update_layout(template='plotly_dark', polar=dict(radialaxis=dict(visible=True, range=[0, 100])),
@@ -126,4 +132,4 @@ try:
                     cols[j % 2].plotly_chart(f, use_container_width=True, theme=None)
 
 except Exception as e:
-    st.error(f"エラーが発生しました: {e}")
+    st.error(f"予期せぬエラーが発生しました: {e}")
