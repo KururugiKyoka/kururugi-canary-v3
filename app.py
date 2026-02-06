@@ -20,7 +20,6 @@ st.markdown('<head><title>経済 Macro NOTE (KURURUGI)</title></head>', unsafe_a
 def load_data():
     try:
         df = pd.read_csv('canary_data.csv', index_col=0, parse_dates=True)
-        # 列名の微修正（スペースなどが混入している場合への対策）
         df.columns = df.columns.str.strip()
         return df
     except:
@@ -63,8 +62,6 @@ conf = {
 if df is not None:
     try:
         latest_date = df.index[-1]
-        
-        # 期間設定
         period_map = {"1ヶ月前": 30, "6ヶ月前": 180, "1年前": 365}
         selected_period = st.sidebar.selectbox("比較対象を選択", list(period_map.keys()))
         
@@ -76,11 +73,11 @@ if df is not None:
         past_scores = get_cached_scores(df, df.loc[past_date].to_dict())
 
         st.title("🐤 Macro NOTE (KURURUGI)")
-        st.caption(f"最終更新: {latest_date.strftime('%Y-%m-%d')} / 比較対象: {selected_period}")
+        st.caption(f"最終更新: {latest_date.strftime('%Y-%m-%d')} / 比較: {selected_period}")
 
         st.divider()
 
-        # --- メインエリア：レーダーと金利差を横並びに復活 ---
+        # --- メインエリア：レーダーと金利差（改良版） ---
         col1, col2 = st.columns([1, 1])
         
         with col1:
@@ -97,23 +94,29 @@ if df is not None:
             code = "T10Y2Y"
             if code in df.columns:
                 st.subheader(f"📉 {conf[code][0]}")
-                display_df = df[[code]].copy()
-                display_df[code] = display_df[code] * conf[code][2]
-                fig_m = px.line(display_df, y=code, color_discrete_sequence=['#F43F5E'])
-                fig_m.update_layout(template='plotly_dark', height=350, margin=dict(l=0, r=0, t=20, b=0), xaxis_title=None, yaxis_title=None)
+                fig_m = go.Figure()
+                
+                # エリア塗り分け（逆イールド＝青、プラス圏＝警告の赤）
+                fig_m.add_trace(go.Scatter(x=df.index, y=df[code], fill='tozeroy', 
+                                         fillcolor='rgba(244, 63, 94, 0.2)', line=dict(color='#F43F5E', width=3), 
+                                         name="金利差"))
+                
+                # 0.0の基準線（ここが重要）
+                fig_m.add_hline(y=0.0, line_width=2, line_dash="dash", line_color="white")
+                
+                # アノテーション（説明タグ）
+                fig_m.add_annotation(x=df.index[-1], y=-0.5, text="逆イールド（異常）", showarrow=False, font=dict(color="#00FFFF"))
+                fig_m.add_annotation(x=df.index[-1], y=0.5, text="スティープ化（警戒）", showarrow=False, font=dict(color="#F43F5E"))
+
+                fig_m.update_layout(template='plotly_dark', height=400, margin=dict(l=0, r=0, t=20, b=0),
+                                  xaxis=dict(showgrid=False), yaxis=dict(showgrid=True, gridcolor='rgba(255,255,255,0.1)'))
                 st.plotly_chart(fig_m, use_container_width=True, config={'displayModeBar': False})
-            else:
-                st.warning(f"【{code}】のデータがCSVに見当たりません。GitHub Actionsの取得状況を確認してください。")
 
         st.divider()
 
         # --- 詳細タブ ---
         tabs = st.tabs(["🏠 住宅・物流", "👥 労働・景況", "💸 金融・供給量"])
-        sections = [
-            ["HTRUCKSSAAR", "HOUST"],
-            ["ICSA", "TEMPHELPS"],
-            ["WALCL", "BAMLH0A0HYM2"]
-        ]
+        sections = [["HTRUCKSSAAR", "HOUST"], ["ICSA", "TEMPHELPS"], ["WALCL", "BAMLH0A0HYM2"]]
         
         for i, codes in enumerate(sections):
             with tabs[i]:
@@ -128,5 +131,3 @@ if df is not None:
 
     except Exception as e:
         st.error(f"表示エラー: {e}")
-else:
-    st.error("canary_data.csv が見つからないか、読み込めません。")
