@@ -5,4 +5,6 @@ plotly
 requests
 beautifulsoup4
 pandas-datareader
+google-generativeai
+
 
