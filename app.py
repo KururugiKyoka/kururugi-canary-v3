@@ -5,20 +5,19 @@ import plotly.graph_objects as go
 import datetime
 import google.generativeai as genai
 
-# 1. note表示のためのメタ設定（ページタイトルの反映を強化）
+# 1. ページ基本設定（note/スマホ表示の最適化）
 st.set_page_config(
-    page_title="経済 Macro NOTE (KURURUGI) | 景気先読みダッシュボード",
+    page_title="経済 Macro NOTE (KURURUGI)",
     page_icon="🐤",
-    layout="wide",
-    initial_sidebar_state="expanded"
+    layout="wide" # 基本はワイドですが、スマホでは自動で縦に並びます
 )
 
-# 2. データの読み込み（キャッシュ）
+# --- 2. データの読み込み（キャッシュ） ---
 @st.cache_data(ttl=3600)
 def load_data():
     return pd.read_csv('canary_data.csv', index_col=0, parse_dates=True)
 
-# 3. スコア計算（キャッシュ）
+# --- 3. スコア計算（キャッシュ） ---
 @st.cache_data
 def get_cached_scores(df_history, data_row_dict):
     data_row = pd.Series(data_row_dict)
@@ -35,42 +34,50 @@ def get_cached_scores(df_history, data_row_dict):
         '投資・AIの過熱感': 75 
     }
 
-# 4. Gemini API 分析（404エラーを確実に回避する最新ロジック）
+# --- 4. Gemini API 分析（高速・安定版） ---
 @st.cache_data(show_spinner=False)
 def get_ai_insight(current, past, period_name):
-    if "GEMINI_API_KEY" not in st.secrets: return "⚠️ APIキーが設定されていません。"
+    if "GEMINI_API_KEY" not in st.secrets: return "⚠️ APIキー未設定"
     try:
         genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
-        # モデル名の指定を最新の標準形式に固定
         model = genai.GenerativeModel('gemini-1.5-flash')
-        prompt = f"以下のマクロ経済リスクの変化（現在vs{period_name}）を3行で日本語解説して。現在:{current}, 過去:{past}"
-        response = model.generate_content(prompt)
-        return response.text
-    except Exception as e:
-        return f"🤖 分析を準備中です。少し待ってからページを更新してください。\n(Status: {e})"
+        prompt = f"マクロ経済分析: 現在{current}、{period_name}{past}の変化を3行で日本語解説して。"
+        return model.generate_content(prompt).text
+    except:
+        return "🤖 AI診断準備中...リロードをお試しください。"
 
-# ========= メイン表示 =========
+# ========= メイン表示処理 =========
 try:
     df = load_data()
     latest_date = df.index[-1]
     
-    # 期間選択
+    # サイドバー（スマホでは左上の「>」で開きます）
     period_map = {"1ヶ月前": 30, "6ヶ月前": 180, "1年前": 365}
     selected_period = st.sidebar.selectbox("比較対象を選択", list(period_map.keys()))
+    
+    # 比較データの抽出
     target_past_date = latest_date - datetime.timedelta(days=period_map[selected_period])
     idx = df.index.get_indexer([target_past_date], method='nearest')[0]
     past_date = df.index[idx]
 
-    # スコア算出
     current_scores = get_cached_scores(df, df.loc[latest_date].to_dict())
     past_scores = get_cached_scores(df, df.loc[past_date].to_dict())
 
-    # タイトル・ヘッダー
-    st.title("🐤 経済 Macro NOTE (KURURUGI)")
-    st.caption(f"最終更新: {latest_date.strftime('%Y-%m-%d')} / 比較対象: {past_date.strftime('%Y-%m-%d')} ({selected_period})")
+    # --- ヘッダー（スマホで読みやすいサイズに） ---
+    st.title("🐤 Macro NOTE")
+    st.caption(f"更新: {latest_date.strftime('%Y-%m-%d')} / 比較: {selected_period}")
 
-    # チャート配置
-    col1, col2 = st.columns([1, 2])
+    # --- 🤖 AI診断（スマホで最初に見える位置に配置） ---
+    with st.container():
+        insight = get_ai_insight(current_scores, past_scores, selected_period)
+        st.success(f"**AIモメンタム診断:**\n\n{insight}")
+
+    st.divider()
+
+    # --- 🕸️ レーダーチャート（スマホでは縦に並ぶように調整） ---
+    # st.columns はスマホだと自動的に縦に並びますが、高さを抑えてスクロールしやすくします
+    col1, col2 = st.columns([1, 1]) 
+    
     with col1:
         st.subheader("🕸️ リスク・モメンタム")
         items = list(current_scores.keys()); items_c = items + [items[0]]
@@ -78,30 +85,42 @@ try:
         fig_r.add_trace(go.Scatterpolar(r=[25]*6, theta=items_c, fill='toself', fillcolor='rgba(0, 255, 255, 0.1)', line=dict(color='rgba(0, 255, 255, 0.2)', width=1), name='安全圏'))
         fig_r.add_trace(go.Scatterpolar(r=[past_scores[i] for i in items]+[past_scores[items[0]]], theta=items_c, mode='lines+markers', line=dict(color='#00FFFF', width=2, dash='dot'), name=selected_period))
         fig_r.add_trace(go.Scatterpolar(r=[current_scores[i] for i in items]+[current_scores[items[0]]], theta=items_c, fill='toself', fillcolor='rgba(220, 20, 60, 0.8)', line=dict(color='#FF0000', width=5), name='現在'))
-        fig_r.update_layout(template='plotly_dark', polar=dict(radialaxis=dict(visible=True, range=[0, 100])), legend=dict(orientation="h", y=1.2), height=350, margin=dict(l=40,r=40,t=20,b=20))
-        st.plotly_chart(fig_r, use_container_width=True)
+        
+        fig_r.update_layout(
+            template='plotly_dark',
+            polar=dict(radialaxis=dict(visible=True, range=[0, 100])),
+            legend=dict(orientation="h", y=1.2),
+            height=380, # スマホで見やすい高さ
+            margin=dict(l=40, r=40, t=40, b=40)
+        )
+        st.plotly_chart(fig_r, use_container_width=True, config={'displayModeBar': False})
 
     with col2:
-        st.subheader("📉 主要指標：10Y-2Y 長短金利差")
+        st.subheader("📉 長短金利差 (10Y-2Y)")
         fig_m = px.line(df, y='T10Y2Y', color_discrete_sequence=['#F43F5E'])
-        fig_m.update_layout(template='plotly_dark', height=350, margin=dict(l=0,r=0,t=20,b=0))
-        st.plotly_chart(fig_m, use_container_width=True)
+        fig_m.update_layout(
+            template='plotly_dark', 
+            height=300, # 高さを抑えて縦スクロールを楽に
+            margin=dict(l=0, r=0, t=20, b=0),
+            xaxis_title=None, yaxis_title=None
+        )
+        st.plotly_chart(fig_m, use_container_width=True, config={'displayModeBar': False})
 
-    # AI診断セクション
-    st.info(get_ai_insight(current_scores, past_scores, selected_period))
-
-    # 詳細データタブ
+    # --- 各セクター詳細（スマホではタブが便利） ---
     st.divider()
-    tabs = st.tabs(["🏠 住宅・物流", "👥 労働・景況", "💸 金融・流動性"])
-    sections = [{"HTRUCKSSAAR": "重量トラック", "HOUST": "住宅着工", "PERMIT": "住宅許認可"}, {"TEMPHELPS": "暫定雇用", "ICSA": "失業申請", "MANEMP": "ISM雇用"}, {"WALCL": "FRB総資産", "RRPONTSYD": "リバースレポ", "M2SL": "M2マネーストック"}]
+    tabs = st.tabs(["🏠 住宅・物流", "👥 労働・景況", "💸 金融"])
+    sections = [
+        {"HTRUCKSSAAR": "重量トラック", "HOUST": "住宅着工", "PERMIT": "住宅許認可"},
+        {"TEMPHELPS": "暫定雇用", "ICSA": "失業申請", "MANEMP": "ISM雇用"},
+        {"WALCL": "FRB資産", "RRPONTSYD": "リバースレポ", "M2SL": "M2マネーストック"}
+    ]
     for i, sect in enumerate(sections):
         with tabs[i]:
-            cols = st.columns(2)
-            for j, (code, name) in enumerate(sect.items()):
+            for code, name in sect.items():
                 if code in df.columns:
-                    f = px.line(df, y=code, title=f"【{name}】"); f.update_layout(template='plotly_dark', height=250)
-                    cols[j % 2].plotly_chart(f, use_container_width=True)
+                    f = px.line(df, y=code, title=f"【{name}】")
+                    f.update_layout(template='plotly_dark', height=250, margin=dict(l=0, r=0, t=30, b=0))
+                    st.plotly_chart(f, use_container_width=True, config={'displayModeBar': False})
 
 except Exception as e:
-    st.error(f"システムエラーが発生しました: {e}")
-
+    st.error(f"Error: {e}")
