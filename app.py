@@ -62,10 +62,7 @@ conf = {
 if df is not None:
     try:
         latest_date = df.index[-1]
-        
-        # --- 期間設定（デフォルトを「1年前」に設定） ---
         period_map = {"1ヶ月前": 30, "6ヶ月前": 180, "1年前": 365}
-        # index=2 を指定することで、リストの3番目「1年前」が初期値になります
         selected_period = st.sidebar.selectbox("比較対象を選択", list(period_map.keys()), index=2)
         
         target_past_date = latest_date - datetime.timedelta(days=period_map[selected_period])
@@ -80,17 +77,30 @@ if df is not None:
 
         st.divider()
 
-        # --- メインエリア：レーダーと金利差 ---
         col1, col2 = st.columns([1, 1])
         
         with col1:
             st.subheader("🕸️ 景気後退リスク")
             items = list(current_scores.keys()); items_c = items + [items[0]]
             fig_r = go.Figure()
-            fig_r.add_trace(go.Scatterpolar(r=[25]*6, theta=items_c, fill='toself', fillcolor='rgba(0, 255, 255, 0.1)', line=dict(color='rgba(0, 255, 255, 0.2)', width=3), name='安全圏'))
-            fig_r.add_trace(go.Scatterpolar(r=[past_scores[i] for i in items]+[past_scores[items[0]]], theta=items_c, mode='lines+markers', line=dict(color='#00FFFF', width=2, dash='dot'), name=selected_period))
+            
+            # --- 強調された安全圏 ---
+            fig_r.add_trace(go.Scatterpolar(
+                r=[25]*6, 
+                theta=items_c, 
+                fill='toself', 
+                fillcolor='rgba(0, 255, 255, 0.3)', # 塗りつぶしを濃く
+                line=dict(color='#00FFFF', width=3), # 境界線を太く・鮮やかに
+                name='安全圏'
+            ))
+            
+            # 比較対象（1年前）
+            fig_r.add_trace(go.Scatterpolar(r=[past_scores[i] for i in items]+[past_scores[items[0]]], theta=items_c, mode='lines+markers', line=dict(color='rgba(255, 255, 255, 0.5)', width=2, dash='dot'), marker=dict(size=6), name=selected_period))
+            
+            # 現在（深紅：最前面）
             fig_r.add_trace(go.Scatterpolar(r=[current_scores[i] for i in items]+[current_scores[items[0]]], theta=items_c, fill='toself', fillcolor='rgba(220, 20, 60, 0.8)', line=dict(color='#FF0000', width=5), name='現在'))
-            fig_r.update_layout(template='plotly_dark', polar=dict(radialaxis=dict(visible=True, range=[0, 100])), legend=dict(orientation="h", y=1.2), height=400, margin=dict(l=40, r=40, t=40, b=40))
+            
+            fig_r.update_layout(template='plotly_dark', polar=dict(radialaxis=dict(visible=True, range=[0, 100], gridcolor='rgba(255,255,255,0.1)')), legend=dict(orientation="h", y=1.2), height=450, margin=dict(l=40, r=40, t=40, b=40))
             st.plotly_chart(fig_r, use_container_width=True, config={'displayModeBar': False})
 
         with col2:
@@ -107,10 +117,8 @@ if df is not None:
 
         st.divider()
 
-        # --- 詳細タブ ---
         tabs = st.tabs(["🏠 住宅・物流", "👥 労働・景況", "💸 金融・供給量"])
         sections = [["HTRUCKSSAAR", "HOUST"], ["ICSA", "TEMPHELPS"], ["WALCL", "BAMLH0A0HYM2"]]
-        
         for i, codes in enumerate(sections):
             with tabs[i]:
                 c1, c2 = st.columns(2)
